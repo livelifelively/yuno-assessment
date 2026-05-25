@@ -1,0 +1,7 @@
+Generic single-database configuration.
+
+Batch 0 ships migration scaffolding only — no models, no revisions. Batch 1 creates
+the first models (yuno.Agent, etc.) and generates the first revision via:
+
+    uv run alembic revision --autogenerate -m "batch 1 — agents"
+    uv run alembic upgrade head

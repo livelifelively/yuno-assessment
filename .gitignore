@@ -1,0 +1,32 @@
+# env
+.env
+.env.local
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# node
+node_modules/
+*.log
+.pnpm-store/
+dist/
+.vite/
+*.tsbuildinfo
+
+# editors
+.vscode/
+.idea/
+.DS_Store
+
+# spike outputs
+backend/spikes/.last_run.json
