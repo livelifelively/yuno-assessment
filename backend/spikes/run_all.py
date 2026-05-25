@@ -43,7 +43,6 @@ def load_spike(path: Path):
 
 def main() -> int:
     os.environ.setdefault("LITELLM_LOG", "ERROR")
-    # Allow overriding the model via env var (e.g. when gemini-2.0-flash quota is exhausted)
     from _common import _GEMINI_MODELS
 
     model_override = os.getenv("SPIKE_GEMINI_MODEL")
