@@ -38,12 +38,14 @@ yuno/implementation/
 │   ├── app/                 application code (app factory, db, event bus, runtime)
 │   ├── alembic/             migrations
 │   ├── spikes/              CrewAI capability tests (batch 0)
+│   ├── tests/               pytest harness (PG + rollback, mock_llm, bus_events)
 │   ├── pyproject.toml       uv project file
 │   └── Dockerfile
 ├── frontend/                Vite + React + Mantine + React Flow
-│   ├── src/
+│   ├── src/                 src + src/__tests__ for Vitest
 │   ├── package.json
 │   ├── vite.config.ts
+│   ├── vitest.config.ts
 │   └── Dockerfile
 ├── docker-compose.yml
 └── .env.example
@@ -62,6 +64,33 @@ docker compose run --rm backend uv run python spikes/01_llm_tokens.py
 ```
 
 Each prints `PASS` or `FAIL: <reason>`; `run_all` exits non-zero if any failed.
+
+## Tests
+
+### Backend (pytest)
+
+```bash
+# All tests (needs Postgres up — `docker compose up -d postgres` first)
+docker compose run --rm backend uv run pytest
+
+# One file
+docker compose run --rm backend uv run pytest tests/test_smoke.py -v
+```
+
+Fixtures provided by [`backend/tests/conftest.py`](backend/tests/conftest.py):
+
+- `client` — FastAPI `TestClient` with the DB session overridden to share the test's transaction
+- `db_session` — SQLModel session inside a connection-level transaction (rolled back at teardown; auto-creates the `yuno_test` database)
+- `mock_llm` — monkeypatches `litellm.completion`; CrewAI's Agent/Task/Crew orchestration still runs real
+- `bus_events` — captures every event published on the in-process bus
+
+### Frontend (Vitest)
+
+```bash
+pnpm test:run            # CI mode (exits)
+pnpm test                # watch mode
+pnpm test:ui             # open the Vitest UI
+```
 
 ## Development workflows
 
