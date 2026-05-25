@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# gemini-2.5-flash-lite free tier: 15 RPM, 250k TPM, 1000 RPD.
+# gemini-3.1-flash-lite-preview free tier: 15 RPM, 250k TPM, 1000 RPD.
 # We enforce a minimum gap between consecutive LLM calls so run_all stays
 # comfortably under the 15 RPM ceiling regardless of how many calls each
 # spike makes internally.
@@ -56,7 +56,7 @@ def require_gemini_key() -> SpikeResult | None:
 
 
 _GEMINI_MODELS = [
-    "gemini/gemini-2.5-flash-lite",  # 15 RPM / 250k TPM / 1000 RPD free tier
+    "gemini/gemini-3.1-flash-lite-preview",  # free tier: 15 RPM / 250k TPM / 1000 RPD
 ]
 
 
