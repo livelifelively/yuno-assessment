@@ -4,24 +4,24 @@ version = "0.0.0"
 description = "yuno backend — FastAPI + SQLModel + CrewAI (V1, batch 0 scaffold)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
-    "pydantic>=2.9",
-    "pydantic-settings>=2.6",
-    "sqlmodel>=0.0.22",
-    "psycopg[binary]>=3.2",
-    "alembic>=1.14",
-    "crewai[google-genai]>=1.0",
-    "litellm>=1.55",
-    "python-dotenv>=1.0",
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "pydantic-settings",
+    "sqlmodel",
+    "psycopg[binary]",
+    "alembic",
+    "crewai[google-genai]",
+    "litellm",
+    "python-dotenv",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3",
-    "pytest-asyncio>=0.24",
-    "httpx>=0.27",
-    "ruff>=0.7",
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "ruff",
 ]
 
 [tool.ruff]
