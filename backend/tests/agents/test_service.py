@@ -14,9 +14,13 @@ import pytest
 from app.agents import service
 from app.agents.domain import Agent, AgentLimits, ModelConfig, Provider, Tone
 from app.agents.errors import AgentEditConflict, AgentNotFound
+from app.runs import service as runs_service
+from app.runs.domain import ActiveStatus, RunRef
 
 
 def _make_agent(**overrides) -> Agent:
+    """Build a domain Agent with sensible defaults; overrides set just the
+    fields a test cares about."""
     now = datetime.now(UTC)
     defaults = dict(
         id=uuid4(),
@@ -39,6 +43,8 @@ def _make_agent(**overrides) -> Agent:
 
 
 def test_create_agent_persists_all_four_dimensions(db_session):
+    """All four Batch 1 dimensions (Identity, Personality, Model, Limits)
+    round-trip through create + get."""
     agent = _make_agent(
         role="QA",
         description="Quality assurance",
@@ -69,10 +75,12 @@ def test_create_agent_persists_all_four_dimensions(db_session):
 
 
 def test_get_agent_returns_none_for_missing(db_session):
+    """get_agent returns None for an unknown id; does not raise."""
     assert service.get_agent(db_session, uuid4()) is None
 
 
 def test_update_agent_partial_leaves_untouched_fields(db_session):
+    """Updating one field does not clobber the others."""
     original = _make_agent(name="Original", role="QA")
     service.create_agent(db_session, original)
 
@@ -86,6 +94,7 @@ def test_update_agent_partial_leaves_untouched_fields(db_session):
 
 
 def test_update_agent_raises_not_found_for_missing(db_session):
+    """update_agent raises AgentNotFound when the agent doesn't exist."""
     agent = _make_agent()  # never persisted
     with pytest.raises(AgentNotFound):
         service.update_agent(db_session, agent, force=False)
@@ -94,9 +103,8 @@ def test_update_agent_raises_not_found_for_missing(db_session):
 def test_update_agent_raises_conflict_when_active_runs_and_not_forced(
     db_session, monkeypatch
 ):
-    from app.runs import service as runs_service
-    from app.runs.domain import ActiveStatus, RunRef
-
+    """Lock check fires: with active runs and force=False, update_agent raises
+    AgentEditConflict carrying the blocking runs."""
     agent = _make_agent()
     service.create_agent(db_session, agent)
 
@@ -118,9 +126,7 @@ def test_update_agent_raises_conflict_when_active_runs_and_not_forced(
 def test_update_agent_succeeds_when_forced_despite_active_runs(
     db_session, monkeypatch
 ):
-    from app.runs import service as runs_service
-    from app.runs.domain import ActiveStatus, RunRef
-
+    """force=True bypasses the lock; the in-flight run is not cancelled."""
     agent = _make_agent()
     service.create_agent(db_session, agent)
 
@@ -140,6 +146,7 @@ def test_update_agent_succeeds_when_forced_despite_active_runs(
 
 
 def test_list_agents_pagination_and_total(db_session):
+    """list_agents honors limit/offset; total reflects the full row count."""
     for i in range(5):
         service.create_agent(db_session, _make_agent(name=f"Agent {i}"))
 

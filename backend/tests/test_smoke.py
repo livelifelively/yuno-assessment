@@ -8,7 +8,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, text
-
+import litellm
+from app.event_bus import Event, bus
 
 def test_health_endpoint(client: TestClient) -> None:
     """FastAPI client fixture wires the app correctly."""
@@ -59,8 +60,6 @@ def test_db_session_no_leak(db_session: Session) -> None:
 
 def test_mock_llm_default_response(mock_llm) -> None:
     """mock_llm returns a canned ModelResponse with usage block."""
-    import litellm
-
     response = litellm.completion(model="gemini/test", messages=[])
     assert response.choices[0].message.content == "ok"
     assert response.usage.prompt_tokens == 10
@@ -70,8 +69,6 @@ def test_mock_llm_default_response(mock_llm) -> None:
 
 def test_mock_llm_custom_response(mock_llm) -> None:
     """set_response lets a test override the canned response per-test."""
-    import litellm
-
     mock_llm.set_response(content="hello world", prompt_tokens=3, completion_tokens=2)
     response = litellm.completion(model="gemini/test", messages=[])
     assert response.choices[0].message.content == "hello world"
@@ -81,8 +78,6 @@ def test_mock_llm_custom_response(mock_llm) -> None:
 @pytest.mark.asyncio
 async def test_bus_events_captures_publishes(bus_events: list) -> None:
     """bus_events captures every event published during the test."""
-    from app.event_bus import Event, bus
-
     await bus.publish(Event(type="test.one", payload={"k": 1}))
     await bus.publish(Event(type="test.two", payload={"k": 2}))
 

@@ -16,6 +16,7 @@ from app.agents.http.dtos import (
 
 
 def _make_create_dto() -> AgentCreate:
+    """Build a fully-populated AgentCreate DTO for adapter input."""
     return AgentCreate(
         name="A",
         role="QA",
@@ -36,6 +37,8 @@ def _make_create_dto() -> AgentCreate:
 
 
 def _make_agent(**overrides) -> Agent:
+    """Build a domain Agent with sensible defaults; overrides set just the
+    fields a test cares about."""
     now = datetime.now(UTC)
     defaults = dict(
         id=uuid4(),
@@ -60,6 +63,7 @@ def _make_agent(**overrides) -> Agent:
 
 
 def test_create_to_domain_assigns_persistence_owned_fields():
+    """create_to_domain populates id / created_at / updated_at from arguments."""
     create = _make_create_dto()
     agent_id = uuid4()
     now = datetime.now(UTC)
@@ -77,6 +81,7 @@ def test_create_to_domain_assigns_persistence_owned_fields():
 
 
 def test_apply_update_top_level_present_overwrites():
+    """Top-level fields present in the patch overwrite the existing value."""
     existing = _make_agent(name="Existing", role="QA")
     patch = AgentUpdate(name="New")
     now = datetime.now(UTC)
@@ -89,6 +94,7 @@ def test_apply_update_top_level_present_overwrites():
 
 
 def test_apply_update_top_level_absent_leaves_existing():
+    """Top-level fields absent from the patch leave the existing value alone."""
     existing = _make_agent(name="Existing", role="QA", description="orig")
     patch = AgentUpdate(name="New")
     now = datetime.now(UTC)
@@ -100,6 +106,7 @@ def test_apply_update_top_level_absent_leaves_existing():
 
 
 def test_apply_update_nested_model_present_wholly_replaces():
+    """A present nested model block replaces the existing ModelConfig wholesale."""
     existing = _make_agent(
         model=ModelConfig(
             provider=Provider.gemini, name="old-model", temperature=0.1
@@ -121,6 +128,7 @@ def test_apply_update_nested_model_present_wholly_replaces():
 
 
 def test_apply_update_nested_model_absent_leaves_existing():
+    """An absent model block leaves the existing ModelConfig untouched."""
     existing = _make_agent()
     patch = AgentUpdate(name="renamed")
     now = datetime.now(UTC)
@@ -131,6 +139,7 @@ def test_apply_update_nested_model_absent_leaves_existing():
 
 
 def test_apply_update_nested_limits_present_wholly_replaces():
+    """A present nested limits block replaces the existing AgentLimits wholesale."""
     existing = _make_agent(limits=AgentLimits(max_run_tokens=1000))
     patch = AgentUpdate(
         limits=AgentLimitsDTO(
@@ -148,6 +157,7 @@ def test_apply_update_nested_limits_present_wholly_replaces():
 
 
 def test_apply_update_nested_limits_absent_leaves_existing():
+    """An absent limits block leaves the existing AgentLimits untouched."""
     existing = _make_agent(limits=AgentLimits(max_run_tokens=1000))
     patch = AgentUpdate(name="x")
     now = datetime.now(UTC)
@@ -158,6 +168,7 @@ def test_apply_update_nested_limits_absent_leaves_existing():
 
 
 def test_apply_update_sets_updated_at_not_created_at():
+    """apply_update sets updated_at from the `now` argument; created_at is unchanged."""
     existing = _make_agent()
     original_created = existing.created_at
     later = original_created + timedelta(seconds=1)
@@ -169,6 +180,7 @@ def test_apply_update_sets_updated_at_not_created_at():
 
 
 def test_domain_to_read_surfaces_all_fields():
+    """domain_to_read projects every domain Agent field onto AgentRead."""
     agent = _make_agent()
     read = adapter.domain_to_read(agent)
 
@@ -182,6 +194,7 @@ def test_domain_to_read_surfaces_all_fields():
 
 
 def test_round_trip_create_to_read_matches_input_fields():
+    """AgentCreate → create_to_domain → domain_to_read preserves every input field."""
     create = _make_create_dto()
     agent_id = uuid4()
     now = datetime.now(UTC)

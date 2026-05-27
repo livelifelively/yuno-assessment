@@ -11,6 +11,8 @@ from app.agents.persistence.row import AgentRow
 
 
 def _make_agent(**overrides) -> Agent:
+    """Build a domain Agent with sensible defaults; overrides set just the
+    fields a test cares about."""
     now = datetime.now(UTC)
     defaults = dict(
         id=uuid4(),
@@ -35,6 +37,8 @@ def _make_agent(**overrides) -> Agent:
 
 
 def _make_row(**overrides) -> AgentRow:
+    """Build an AgentRow with sensible defaults; overrides set just the fields
+    a test cares about."""
     now = datetime.now(UTC)
     defaults = dict(
         id=uuid4(),
@@ -57,6 +61,7 @@ def _make_row(**overrides) -> AgentRow:
 
 
 def test_domain_to_row_flattens_model_into_columns():
+    """domain_to_row spreads ModelConfig into the four flat model_* columns."""
     agent = _make_agent()
     row = adapter.domain_to_row(agent)
 
@@ -67,6 +72,7 @@ def test_domain_to_row_flattens_model_into_columns():
 
 
 def test_domain_to_row_serializes_limits_as_jsonb_dict():
+    """domain_to_row dumps AgentLimits to a dict for the JSONB column."""
     agent = _make_agent()
     row = adapter.domain_to_row(agent)
 
@@ -76,6 +82,7 @@ def test_domain_to_row_serializes_limits_as_jsonb_dict():
 
 
 def test_row_to_domain_re_nests_model_columns():
+    """row_to_domain re-nests the flat model_* columns back into ModelConfig."""
     row = _make_row(
         model_provider="gemini",
         model_name="gemini-3.1-flash-lite-preview",
@@ -91,6 +98,7 @@ def test_row_to_domain_re_nests_model_columns():
 
 
 def test_row_to_domain_re_hydrates_limits_from_jsonb():
+    """row_to_domain rebuilds AgentLimits from the JSONB dict."""
     row = _make_row(
         limits={"max_run_tokens": 2000, "max_run_steps": 5, "daily_cost_usd": 1.0},
     )
@@ -103,12 +111,14 @@ def test_row_to_domain_re_hydrates_limits_from_jsonb():
 
 
 def test_row_to_domain_tone_string_parses_into_enum():
+    """row_to_domain coerces the str tone column into the Tone enum."""
     row = _make_row(tone="professional")
     agent = adapter.row_to_domain(row)
     assert agent.tone == Tone.professional
 
 
 def test_round_trip_domain_row_domain_matches_field_for_field():
+    """domain → row → domain preserves every field."""
     original = _make_agent()
     row = adapter.domain_to_row(original)
     recovered = adapter.row_to_domain(row)
@@ -129,6 +139,7 @@ def test_round_trip_domain_row_domain_matches_field_for_field():
 
 
 def test_round_trip_handles_none_fields():
+    """None / null fields survive the round-trip as None."""
     original = _make_agent(
         role=None, description=None, tone=None, traits=None, limits=None
     )
@@ -143,6 +154,8 @@ def test_round_trip_handles_none_fields():
 
 
 def test_apply_domain_to_row_in_place_preserves_orm_identity():
+    """apply_domain_to_row mutates the existing row object (same instance)
+    rather than building a new one."""
     row = _make_row(name="old")
     original_identity = id(row)
 
