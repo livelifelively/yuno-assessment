@@ -26,6 +26,10 @@ from sqlalchemy import create_engine as sa_create_engine
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine
 
+# Import the model registry so SQLModel.metadata is populated before
+# metadata.create_all runs in the `engine` fixture.
+from app import models  # noqa: F401, E402
+
 ADMIN_URL = os.getenv(
     "TEST_ADMIN_DATABASE_URL",
     "postgresql+psycopg://yuno:yuno@postgres:5432/postgres",

@@ -14,8 +14,10 @@ if config.config_file_name is not None:
 # DATABASE_URL from env overrides alembic.ini.
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
-# Import any model modules here once they exist (batch 1+).
-# Batch 0: no models — SQLModel.metadata is empty by design.
+# Import the central model registry so SQLModel.metadata is populated before
+# autogenerate inspects it.
+from app import models  # noqa: F401, E402
+
 target_metadata = SQLModel.metadata
 
 

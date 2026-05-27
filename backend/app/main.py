@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.agents.http.router import router as agents_router
 from app.runtime import crewai_available, crewai_version
 from app.settings import settings
 
@@ -13,6 +14,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(agents_router)
 
 
 @app.get("/health")
