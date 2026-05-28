@@ -175,7 +175,14 @@ def test_cancel_terminal_run_returns_409(
     )
     run_id = created.json()["id"]
 
-    # Force-transition the row to a terminal state via the service
+    # Drive the row through `active` first — the state machine forbids
+    # the direct pending → completed/aborted shortcut.
+    service.transition_run_state(
+        db_session,
+        UUID(run_id),
+        RunStatus.active,
+        started_at=datetime.now(UTC),
+    )
     service.transition_run_state(
         db_session,
         UUID(run_id),
@@ -215,6 +222,10 @@ def test_get_runs_filter_by_status(client, monkeypatch, db_session):
     r1 = client.post("/runs", json={"agent_id": agent_id, "input": "a"}).json()
     r2 = client.post("/runs", json={"agent_id": agent_id, "input": "b"}).json()
 
+    # pending → active → completed (state machine forbids the direct shortcut).
+    service.transition_run_state(
+        db_session, UUID(r1["id"]), RunStatus.active, started_at=datetime.now(UTC)
+    )
     service.transition_run_state(
         db_session,
         UUID(r1["id"]),
