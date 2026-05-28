@@ -18,5 +18,16 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     telegram_bot_token: str | None = None
 
+    runs_default_list_limit: int = Field(
+        default=50,
+        ge=1,
+        description="Default page size for GET /runs when ?limit is omitted.",
+    )
+    runs_max_list_limit: int = Field(
+        default=200,
+        ge=1,
+        description="Hard cap on ?limit for GET /runs; values above this return 422.",
+    )
+
 
 settings = Settings()

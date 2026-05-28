@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.agents.http.router import router as agents_router
+from app.event_bus import bus
+from app.runs.event_bus.subscriber import RunsEventSubscriber
+from app.runs.http.router import router as runs_router
 from app.runtime import crewai_available, crewai_version
 from app.settings import settings
 
@@ -16,6 +19,19 @@ app.add_middleware(
 )
 
 app.include_router(agents_router)
+app.include_router(runs_router)
+
+_runs_subscriber = RunsEventSubscriber()
+
+
+@app.on_event("startup")
+def _wire_runs_subscriber() -> None:
+    _runs_subscriber.register(bus)
+
+
+@app.on_event("shutdown")
+def _unwire_runs_subscriber() -> None:
+    _runs_subscriber.unregister(bus)
 
 
 @app.get("/health")

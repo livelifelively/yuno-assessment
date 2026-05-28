@@ -8,3 +8,4 @@ is defined in a module.
 """
 
 from app.agents.persistence.row import AgentRow  # noqa: F401
+from app.runs.persistence.row import RunEventRow, RunRow  # noqa: F401
