@@ -152,7 +152,12 @@ def test_cancel_run_terminal_raises_run_already_terminal(
     """cancel_run on a terminal row raises RunAlreadyTerminal carrying that status."""
     agent_id = seed_agent()
     persisted = service.create_run(db_session, _make_run(agent_id=agent_id))
-    # Force-transition without going through the subscriber:
+    # Drive through `active` for terminals that aren't reachable directly from
+    # `pending` per the state-machine table (only `failed` and `cancelled` are
+    # legal pending → terminal moves; completed/aborted need active first).
+    service.transition_run_state(
+        db_session, persisted.id, RunStatus.active, started_at=datetime.now(UTC)
+    )
     service.transition_run_state(
         db_session, persisted.id, terminal, completed_at=datetime.now(UTC)
     )
@@ -185,6 +190,11 @@ def test_list_runs_filters_by_status(db_session, seed_agent):
     agent_id = seed_agent()
     r1 = service.create_run(db_session, _make_run(agent_id=agent_id))
     r2 = service.create_run(db_session, _make_run(agent_id=agent_id))
+    # pending → active → completed (state machine: completed isn't reachable
+    # directly from pending).
+    service.transition_run_state(
+        db_session, r1.id, RunStatus.active, started_at=datetime.now(UTC)
+    )
     service.transition_run_state(
         db_session, r1.id, RunStatus.completed, completed_at=datetime.now(UTC)
     )
@@ -262,6 +272,10 @@ def test_list_active_runs_for_agent_returns_pending_and_active_only(
     service.transition_run_state(
         db_session, active.id, RunStatus.active, started_at=datetime.now(UTC)
     )
+    # `completed` row: pending → active → completed.
+    service.transition_run_state(
+        db_session, completed.id, RunStatus.active, started_at=datetime.now(UTC)
+    )
     service.transition_run_state(
         db_session,
         completed.id,
@@ -310,14 +324,15 @@ def test_get_daily_cost_for_agent_sums_completed_runs_in_window(
     r1 = service.create_run(db_session, _make_run(agent_id=agent_id))
     r2 = service.create_run(db_session, _make_run(agent_id=agent_id))
     now = datetime.now(UTC)
-    # Mark both completed; simulate cost via direct transition (impl detail
-    # in GREEN — the test only asserts the SUM behavior)
-    service.transition_run_state(
-        db_session, r1.id, RunStatus.completed, completed_at=now
-    )
-    service.transition_run_state(
-        db_session, r2.id, RunStatus.completed, completed_at=now
-    )
+    # Drive both rows pending → active → completed (state-machine forbids
+    # the direct pending → completed shortcut).
+    for r in (r1, r2):
+        service.transition_run_state(
+            db_session, r.id, RunStatus.active, started_at=now
+        )
+        service.transition_run_state(
+            db_session, r.id, RunStatus.completed, completed_at=now
+        )
 
     total = service.get_daily_cost_for_agent(db_session, agent_id, hours=24)
     assert isinstance(total, float)
@@ -337,6 +352,9 @@ def test_get_daily_cost_for_agent_default_window_is_24_hours(
     agent_id = seed_agent()
     r = service.create_run(db_session, _make_run(agent_id=agent_id))
     long_ago = datetime.now(UTC) - timedelta(hours=48)
+    service.transition_run_state(
+        db_session, r.id, RunStatus.active, started_at=long_ago
+    )
     service.transition_run_state(
         db_session, r.id, RunStatus.completed, completed_at=long_ago
     )
@@ -366,10 +384,17 @@ def test_transition_run_state_illegal_raises_invalid_transition(
     """An illegal transition (out of a terminal state) raises InvalidRunTransition."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id=agent_id))
+    # Drive into a legitimate terminal state first (pending → failed is legal).
     service.transition_run_state(
-        db_session, run.id, RunStatus.completed, completed_at=datetime.now(UTC)
+        db_session,
+        run.id,
+        RunStatus.failed,
+        error_code="early",
+        error_message="boom",
+        completed_at=datetime.now(UTC),
     )
 
+    # Now any further transition is illegal.
     with pytest.raises(InvalidRunTransition):
         service.transition_run_state(
             db_session, run.id, RunStatus.completed, completed_at=datetime.now(UTC)

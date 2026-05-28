@@ -22,10 +22,16 @@ PRICE_TABLE: dict[tuple[Provider, str], tuple[float, float]] = {
 }
 
 
-def price_for(provider: Provider, model: str) -> tuple[float, float] | None:
-    """Look up the per-1k prices for a (provider, model) pair.
+def price_for(model: str) -> tuple[float, float] | None:
+    """Look up per-1k prices for a model name.
 
-    Returns None when no row matches — caller decides whether to default to
-    (0.0, 0.0) and log a warning, or to raise.
+    PRICE_TABLE is keyed by `(provider, model)` to be forward-compatible
+    with provider-disambiguated pricing; Batch 1 looks up by model name
+    only — the subscriber's `llm.call.completed` payload carries model
+    directly. Returns None when no row matches — callers default to
+    (0.0, 0.0) and log a WARNING per the spec.
     """
-    return PRICE_TABLE.get((provider, model))
+    for (_provider, m), price in PRICE_TABLE.items():
+        if m == model:
+            return price
+    return None
