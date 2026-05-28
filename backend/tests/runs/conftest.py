@@ -12,6 +12,7 @@ the test needs an agent to point at.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -25,9 +26,23 @@ from app.runs.event_bus.subscriber import RunsEventSubscriber
 
 
 @pytest.fixture
-def runs_subscriber() -> Iterator[RunsEventSubscriber]:
-    """Subscribe a RunsEventSubscriber to the global bus for the test."""
-    sub = RunsEventSubscriber()
+def runs_subscriber(db_session: Session) -> Iterator[RunsEventSubscriber]:
+    """Subscribe a RunsEventSubscriber to the global bus for the test.
+
+    Injects a session factory that yields the test's `db_session` (the same
+    one the test uses for writes/reads) without closing it — so the
+    subscriber's UPDATE sits in the same savepoint chain as the test's
+    other writes, and the test can observe the row state via the same
+    session afterwards.
+    """
+
+    @contextmanager
+    def _factory() -> Iterator[Session]:
+        # Yield without entering/exiting the session's own context manager —
+        # the test owns the session's lifetime.
+        yield db_session
+
+    sub = RunsEventSubscriber(session_factory=_factory)
     sub.register(global_bus)
     try:
         yield sub

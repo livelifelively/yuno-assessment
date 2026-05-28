@@ -36,9 +36,17 @@ async def _publish(bus_, event_type: str, payload: dict) -> None:
 
 
 async def _create_terminal_run(db_session, agent_id, target: RunStatus) -> Run:
-    """Helper: insert a pending row then force-transition it to `target` (a terminal state)."""
+    """Helper: drive a fresh run pending → active → terminal_status.
+
+    Always routes through `active` because the state-machine table forbids
+    direct pending → completed/aborted moves; failed/cancelled are legal
+    from pending too, but going through active is uniform + still legal.
+    """
     run = service.create_run(
         db_session, _make_run(agent_id, status=RunStatus.pending)
+    )
+    service.transition_run_state(
+        db_session, run.id, RunStatus.active, started_at=datetime.now(UTC)
     )
     service.transition_run_state(
         db_session, run.id, target, completed_at=datetime.now(UTC)
