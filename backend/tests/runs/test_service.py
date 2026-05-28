@@ -280,14 +280,13 @@ def test_list_active_runs_for_agent_returns_pending_and_active_only(
         assert r.status in {ActiveStatus.pending, ActiveStatus.active}
 
 
-def test_get_run_events_orders_by_sequence_number(
-    db_session, seed_agent, runs_subscriber
-):
-    """Once events are appended, get_run_events returns them ordered by sequence_number ascending."""
+def test_get_run_events_orders_by_sequence_number(db_session, seed_agent):
+    """Once events are appended, get_run_events returns them ordered by
+    sequence_number ascending. Calls append_run_event directly — no bus
+    publish, so the runs_subscriber fixture isn't needed here."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id=agent_id))
 
-    # Append directly via the service (the helper called from the subscriber)
     e1 = Event(type="run.started", payload={"run_id": str(run.id)})
     e2 = Event(type="llm.call.started", payload={"run_id": str(run.id)})
     service.append_run_event(db_session, run.id, e1)

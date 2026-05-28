@@ -1,5 +1,10 @@
 """Event-persistence tests — sequence numbering, step/usage/cost accumulation,
-and verbatim payload storage."""
+and verbatim payload storage.
+
+The `runs_subscriber` fixture is required by tests that publish events on the
+bus (it registers the subscriber so events route to the handlers), but its
+return value is never read — so tests request it via @pytest.mark.usefixtures
+rather than as a function parameter."""
 
 from __future__ import annotations
 
@@ -37,9 +42,8 @@ async def _publish(event_type: str, payload: dict) -> None:
 # ---------- sequence_number ----------
 
 
-async def test_first_event_has_sequence_number_one(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_first_event_has_sequence_number_one(db_session, seed_agent):
     """The first event appended to a run gets sequence_number=1 (1-indexed, per-run)."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
@@ -54,9 +58,8 @@ async def test_first_event_has_sequence_number_one(
     assert events[0].sequence_number == 1
 
 
-async def test_sequence_numbers_are_monotonic_per_run(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_sequence_numbers_are_monotonic_per_run(db_session, seed_agent):
     """Subsequent events on the same run get 2, 3, 4 … in publish order."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
@@ -90,9 +93,8 @@ async def test_sequence_numbers_are_monotonic_per_run(
     assert [e.sequence_number for e in events] == [1, 2, 3]
 
 
-async def test_sequence_numbers_are_independent_per_run(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_sequence_numbers_are_independent_per_run(db_session, seed_agent):
     """Two runs interleave; per-run counters are dense and independent."""
     agent_id = seed_agent()
     run_a = service.create_run(db_session, _make_run(agent_id))
@@ -148,9 +150,8 @@ def test_unique_constraint_enforces_per_run_seq(db_session, seed_agent):
 # ---------- step_count ----------
 
 
-async def test_step_count_increments_on_llm_call_started(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_step_count_increments_on_llm_call_started(db_session, seed_agent):
     """Each llm.call.started event increments the run's step_count by exactly 1."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
@@ -172,8 +173,9 @@ async def test_step_count_increments_on_llm_call_started(
     assert updated.step_count == 3
 
 
+@pytest.mark.usefixtures("runs_subscriber")
 async def test_step_count_does_not_change_on_llm_call_completed_or_failed(
-    db_session, seed_agent, runs_subscriber
+    db_session, seed_agent
 ):
     """Neither llm.call.completed nor llm.call.failed touches step_count — only llm.call.started does."""
     agent_id = seed_agent()
@@ -208,8 +210,9 @@ async def test_step_count_does_not_change_on_llm_call_completed_or_failed(
 # ---------- token_usage_* + cost_usd ----------
 
 
+@pytest.mark.usefixtures("runs_subscriber")
 async def test_token_usage_accumulates_from_llm_call_completed(
-    db_session, seed_agent, runs_subscriber
+    db_session, seed_agent
 ):
     """token_usage_prompt and token_usage_completion sum across successive llm.call.completed events."""
     agent_id = seed_agent()
@@ -241,14 +244,13 @@ async def test_token_usage_accumulates_from_llm_call_completed(
     assert updated.token_usage_completion == 12
 
 
+@pytest.mark.usefixtures("runs_subscriber")
 @pytest.mark.parametrize(
     "row",
     PRICE_TABLE.items(),
     ids=[f"{p.value}/{m}" for (p, m) in PRICE_TABLE.keys()],
 )
-async def test_cost_usd_matches_price_table_lookup(
-    db_session, seed_agent, runs_subscriber, row
-):
+async def test_cost_usd_matches_price_table_lookup(db_session, seed_agent, row):
     """Parametrized over every (provider, model) in PRICE_TABLE — no model
     name is baked into the test code. Adding a row to PRICE_TABLE auto-
     covers that model."""
@@ -272,9 +274,8 @@ async def test_cost_usd_matches_price_table_lookup(
     assert updated.cost_usd == pytest.approx(expected)
 
 
-async def test_cost_usd_accumulates_across_calls(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_cost_usd_accumulates_across_calls(db_session, seed_agent):
     """Multiple llm.call.completed events sum cost_usd."""
     (provider, model), (price_in, price_out) = next(iter(PRICE_TABLE.items()))
     agent_id = seed_agent()
@@ -297,8 +298,9 @@ async def test_cost_usd_accumulates_across_calls(
     assert updated.cost_usd == pytest.approx(expected)
 
 
+@pytest.mark.usefixtures("runs_subscriber")
 async def test_unknown_model_does_not_change_cost_but_appends_event(
-    db_session, seed_agent, runs_subscriber, caplog
+    db_session, seed_agent, caplog
 ):
     """(provider, model) NOT in PRICE_TABLE: cost stays at 0.0; a WARNING
     is logged; the event row is still appended."""
@@ -332,8 +334,9 @@ async def test_unknown_model_does_not_change_cost_but_appends_event(
 # ---------- llm.call.failed ----------
 
 
+@pytest.mark.usefixtures("runs_subscriber")
 async def test_llm_call_failed_appends_event_but_no_row_mutation(
-    db_session, seed_agent, runs_subscriber
+    db_session, seed_agent
 ):
     """llm.call.failed appends a RunEventRow but does NOT mutate step_count / token_usage_* / cost_usd."""
     agent_id = seed_agent()
@@ -364,6 +367,7 @@ async def test_llm_call_failed_appends_event_but_no_row_mutation(
 # ---------- Verbatim payload ----------
 
 
+@pytest.mark.usefixtures("runs_subscriber")
 @pytest.mark.parametrize(
     "event_type,payload_extras",
     [
@@ -415,7 +419,7 @@ async def test_llm_call_failed_appends_event_but_no_row_mutation(
     ],
 )
 async def test_run_events_payload_stored_verbatim(
-    db_session, seed_agent, runs_subscriber, event_type, payload_extras
+    db_session, seed_agent, event_type, payload_extras
 ):
     """For every event_type, the published payload dict is stored byte-for-byte
     in run_events.payload — no filtering, no re-projection."""
@@ -447,9 +451,8 @@ async def test_run_events_payload_stored_verbatim(
 # ---------- JSONB round-trip for AbortReason / CancelReason ----------
 
 
-async def test_abort_reason_round_trips_through_get_run(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_abort_reason_round_trips_through_get_run(db_session, seed_agent):
     """run.aborted persists abort_reason as JSONB; GET /runs/{id} re-hydrates
     it as a nested AbortReason with the LimitName enum coerced."""
     agent_id = seed_agent()
@@ -478,9 +481,8 @@ async def test_abort_reason_round_trips_through_get_run(
     assert updated.abort_reason.cap == 0.001
 
 
-async def test_cancel_reason_round_trips_through_get_run(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_cancel_reason_round_trips_through_get_run(db_session, seed_agent):
     """run.cancelled persists cancel_reason as JSONB; GET /runs/{id}
     re-hydrates it as a nested CancelReason."""
     agent_id = seed_agent()

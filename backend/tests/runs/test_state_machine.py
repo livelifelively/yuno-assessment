@@ -1,8 +1,10 @@
 """State-machine tests — drive transitions by publishing events on the bus
 and asserting the resulting row state.
 
-Uses the `runs_subscriber` fixture to register the subscriber for the test
-and the `db_session` fixture for assertions against the row.
+The `runs_subscriber` fixture registers the RunsEventSubscriber on the global
+bus for the duration of the test — that's a pure side effect (no value is
+read in the body), so tests below request it via @pytest.mark.usefixtures
+rather than as a function parameter.
 """
 
 from __future__ import annotations
@@ -15,7 +17,6 @@ import pytest
 from app.event_bus import Event, bus
 from app.runs import service
 from app.runs.domain import LimitName, Run, RunStatus
-from app.runs.errors import InvalidRunTransition
 
 
 def _make_run(agent_id, status=RunStatus.pending) -> Run:
@@ -34,6 +35,17 @@ async def _publish(bus_, event_type: str, payload: dict) -> None:
     await bus_.publish(Event(type=event_type, payload=payload))
 
 
+async def _create_terminal_run(db_session, agent_id, target: RunStatus) -> Run:
+    """Helper: insert a pending row then force-transition it to `target` (a terminal state)."""
+    run = service.create_run(
+        db_session, _make_run(agent_id, status=RunStatus.pending)
+    )
+    service.transition_run_state(
+        db_session, run.id, target, completed_at=datetime.now(UTC)
+    )
+    return service.get_run(db_session, run.id)
+
+
 # ---------- Legal transitions ----------
 
 
@@ -48,9 +60,8 @@ def test_create_run_inserts_pending_with_zero_counters(db_session, seed_agent):
     assert run.step_count == 0
 
 
-async def test_pending_to_active_on_run_started(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_pending_to_active_on_run_started(db_session, seed_agent):
     """pending → active on run.started: status flips and started_at is set from payload.occurred_at."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
@@ -68,9 +79,8 @@ async def test_pending_to_active_on_run_started(
     assert updated.started_at == started_at
 
 
-async def test_pending_to_failed_on_run_failed(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_pending_to_failed_on_run_failed(db_session, seed_agent):
     """pending → failed (early-failure path): error_code, error_message, and completed_at land from the payload."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
@@ -94,9 +104,8 @@ async def test_pending_to_failed_on_run_failed(
     assert updated.completed_at == completed_at
 
 
-async def test_pending_to_cancelled_on_run_cancelled(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_pending_to_cancelled_on_run_cancelled(db_session, seed_agent):
     """pending → cancelled (operator cancels before wrapper starts): cancel_reason populated, completed_at set."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
@@ -120,9 +129,8 @@ async def test_pending_to_cancelled_on_run_cancelled(
     assert updated.completed_at is not None
 
 
-async def test_active_to_completed_on_run_completed(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_active_to_completed_on_run_completed(db_session, seed_agent):
     """active → completed on run.completed: output is set from payload, completed_at from payload.occurred_at."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
@@ -147,9 +155,8 @@ async def test_active_to_completed_on_run_completed(
     assert updated.completed_at == completed_at
 
 
-async def test_active_to_failed_on_run_failed(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_active_to_failed_on_run_failed(db_session, seed_agent):
     """active → failed on run.failed: error_code and error_message land from the payload."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
@@ -173,9 +180,8 @@ async def test_active_to_failed_on_run_failed(
     assert updated.error_code == "llm_provider_error"
 
 
-async def test_active_to_aborted_on_run_aborted(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_active_to_aborted_on_run_aborted(db_session, seed_agent):
     """active → aborted on run.aborted: abort_reason (limit/value/cap) populated as a nested object, completed_at set."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
@@ -205,9 +211,8 @@ async def test_active_to_aborted_on_run_aborted(
     assert updated.abort_reason.cap == 4000.0
 
 
-async def test_active_to_cancelled_on_run_cancelled(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_active_to_cancelled_on_run_cancelled(db_session, seed_agent):
     """active → cancelled mid-run on run.cancelled: cancel_reason populated, completed_at set."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
@@ -236,17 +241,7 @@ async def test_active_to_cancelled_on_run_cancelled(
 # ---------- Illegal transitions ----------
 
 
-async def _create_terminal_run(db_session, agent_id, target: RunStatus) -> Run:
-    """Helper: insert pending → transition to target (a terminal state)."""
-    run = service.create_run(
-        db_session, _make_run(agent_id, status=RunStatus.pending)
-    )
-    service.transition_run_state(
-        db_session, run.id, target, completed_at=datetime.now(UTC)
-    )
-    return service.get_run(db_session, run.id)
-
-
+@pytest.mark.usefixtures("runs_subscriber")
 @pytest.mark.parametrize(
     "event_type,extra_payload",
     [
@@ -256,7 +251,7 @@ async def _create_terminal_run(db_session, agent_id, target: RunStatus) -> Run:
     ],
 )
 async def test_event_after_terminal_completed_is_dropped(
-    db_session, seed_agent, runs_subscriber, event_type, extra_payload
+    db_session, seed_agent, event_type, extra_payload
 ):
     """An event that would move OUT of `completed` is illegal → subscriber
     catches InvalidRunTransition, row state is unchanged."""
@@ -277,9 +272,8 @@ async def test_event_after_terminal_completed_is_dropped(
     assert after.completed_at == before
 
 
-async def test_event_after_terminal_failed_is_dropped(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_event_after_terminal_failed_is_dropped(db_session, seed_agent):
     """A run.completed event arriving at a `failed` row is illegal — row stays `failed`."""
     agent_id = seed_agent()
     run = await _create_terminal_run(db_session, agent_id, RunStatus.failed)
@@ -297,9 +291,8 @@ async def test_event_after_terminal_failed_is_dropped(
     assert service.get_run(db_session, run.id).status == RunStatus.failed
 
 
-async def test_event_after_terminal_aborted_is_dropped(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_event_after_terminal_aborted_is_dropped(db_session, seed_agent):
     """A run.completed event arriving at an `aborted` row is illegal — row stays `aborted`."""
     agent_id = seed_agent()
     run = await _create_terminal_run(db_session, agent_id, RunStatus.aborted)
@@ -317,9 +310,8 @@ async def test_event_after_terminal_aborted_is_dropped(
     assert service.get_run(db_session, run.id).status == RunStatus.aborted
 
 
-async def test_event_after_terminal_cancelled_is_dropped(
-    db_session, seed_agent, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_event_after_terminal_cancelled_is_dropped(db_session, seed_agent):
     """A run.completed event arriving at a `cancelled` row is illegal — row stays `cancelled`."""
     agent_id = seed_agent()
     run = await _create_terminal_run(db_session, agent_id, RunStatus.cancelled)
@@ -337,8 +329,9 @@ async def test_event_after_terminal_cancelled_is_dropped(
     assert service.get_run(db_session, run.id).status == RunStatus.cancelled
 
 
+@pytest.mark.usefixtures("runs_subscriber")
 async def test_re_emitting_run_started_on_active_is_illegal(
-    db_session, seed_agent, runs_subscriber
+    db_session, seed_agent
 ):
     """active → active via run.started is not in the legal-transitions table.
     started_at must not be overwritten."""
@@ -363,9 +356,8 @@ async def test_re_emitting_run_started_on_active_is_illegal(
 # ---------- Subscriber error containment ----------
 
 
-async def test_subscriber_swallows_invalid_transition(
-    db_session, seed_agent, runs_subscriber, bus_events
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_subscriber_swallows_invalid_transition(db_session, seed_agent):
     """When _handle_* raises InvalidRunTransition, the exception is caught
     inside _on_run_event and bus.publish returns normally."""
     agent_id = seed_agent()
@@ -384,9 +376,8 @@ async def test_subscriber_swallows_invalid_transition(
     # Made it here without raising — the assertion is that publish completed
 
 
-async def test_subscriber_swallows_unknown_run_id(
-    db_session, runs_subscriber
-):
+@pytest.mark.usefixtures("runs_subscriber")
+async def test_subscriber_swallows_unknown_run_id():
     """Event for a run_id that does not exist is logged at ERROR but not raised."""
     await _publish(
         bus,

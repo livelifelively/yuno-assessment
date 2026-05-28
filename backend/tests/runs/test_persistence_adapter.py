@@ -15,7 +15,7 @@ from app.runs.domain import (
     RunStatus,
 )
 from app.runs.persistence import adapter
-from app.runs.persistence.row import RunEventRow, RunRow
+from app.runs.persistence.row import RunRow
 
 
 def _make_run(**overrides) -> Run:
