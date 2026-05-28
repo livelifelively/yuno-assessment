@@ -33,6 +33,7 @@ from app.runtime.wrapper.payloads import (
 
 
 def _mk_event(event_type: str, payload: dict) -> Event:
+    """Build a bus Event with the given type and payload dict."""
     return Event(type=event_type, payload=payload)
 
 
@@ -40,6 +41,7 @@ def _mk_event(event_type: str, payload: dict) -> Event:
 
 
 def test_parse_run_started_valid_event_returns_payload():
+    """A well-formed run.started Event parses into a typed RunStartedPayload."""
     now = datetime.now(UTC)
     run_id = uuid4()
     event = _mk_event(
@@ -54,6 +56,7 @@ def test_parse_run_started_valid_event_returns_payload():
 
 
 def test_parse_run_started_missing_run_id_raises():
+    """A run.started Event missing the required run_id field raises a validation error."""
     event = _mk_event(
         "run.started", {"occurred_at": datetime.now(UTC).isoformat()}
     )
@@ -62,6 +65,7 @@ def test_parse_run_started_missing_run_id_raises():
 
 
 def test_parse_run_completed_valid_event_returns_payload():
+    """A well-formed run.completed Event parses into a typed RunCompletedPayload."""
     event = _mk_event(
         "run.completed",
         {
@@ -76,6 +80,7 @@ def test_parse_run_completed_valid_event_returns_payload():
 
 
 def test_parse_run_failed_valid_event_returns_payload():
+    """A well-formed run.failed Event parses into a typed RunFailedPayload with error_code/message."""
     event = _mk_event(
         "run.failed",
         {
@@ -91,6 +96,7 @@ def test_parse_run_failed_valid_event_returns_payload():
 
 
 def test_parse_run_aborted_valid_event_returns_payload():
+    """A well-formed run.aborted Event parses into RunAbortedPayload with nested AbortReasonPayload."""
     event = _mk_event(
         "run.aborted",
         {
@@ -109,6 +115,7 @@ def test_parse_run_aborted_valid_event_returns_payload():
 
 
 def test_parse_run_cancelled_valid_event_returns_payload():
+    """A well-formed run.cancelled Event parses into RunCancelledPayload with the initiator enum coerced."""
     event = _mk_event(
         "run.cancelled",
         {
@@ -124,6 +131,7 @@ def test_parse_run_cancelled_valid_event_returns_payload():
 
 
 def test_parse_llm_call_started_valid_event_returns_payload():
+    """A well-formed llm.call.started Event parses into a typed LlmCallStartedPayload."""
     event = _mk_event(
         "llm.call.started",
         {
@@ -140,6 +148,7 @@ def test_parse_llm_call_started_valid_event_returns_payload():
 
 
 def test_parse_llm_call_completed_valid_event_returns_payload():
+    """A well-formed llm.call.completed Event parses into LlmCallCompletedPayload with TokenUsage."""
     event = _mk_event(
         "llm.call.completed",
         {
@@ -156,6 +165,7 @@ def test_parse_llm_call_completed_valid_event_returns_payload():
 
 
 def test_parse_llm_call_failed_valid_event_returns_payload():
+    """A well-formed llm.call.failed Event parses into a typed LlmCallFailedPayload with error_code/message."""
     event = _mk_event(
         "llm.call.failed",
         {
@@ -176,6 +186,7 @@ def test_parse_llm_call_failed_valid_event_returns_payload():
 
 
 def test_abort_reason_from_payload_projects_value_object():
+    """RunAbortedPayload → AbortReason: the nested limit/value/cap projects 1:1; LimitName enum is preserved."""
     now = datetime.now(UTC)
     payload = RunAbortedPayload(
         run_id=uuid4(),
@@ -192,6 +203,7 @@ def test_abort_reason_from_payload_projects_value_object():
 
 
 def test_cancel_reason_from_payload_projects_value_object():
+    """RunCancelledPayload → CancelReason: initiator / requested_at / note project 1:1; CancelInitiator preserved."""
     now = datetime.now(UTC)
     payload = RunCancelledPayload(
         run_id=uuid4(),

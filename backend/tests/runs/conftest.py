@@ -4,8 +4,9 @@
 the test and unregisters at teardown. State-machine / event-persistence
 tests use it to route published events through the subscriber pipeline.
 
-`make_agent_row` is a small helper for seeding an agents row, since
-runs.create_run validates agent_id against the agents table.
+`seed_agent` is a small fixture that inserts a minimal AgentRow and returns
+its id — runs.create_run validates agent_id against the agents table, so
+the test needs an agent to point at.
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ def seed_agent(db_session: Session):
     a real agent for create_run's agent-id validation step."""
 
     def _seed(**overrides: Any) -> UUID:
+        """Insert an AgentRow with sensible defaults; overrides patch fields a test cares about."""
         now = datetime.now(UTC)
         defaults: dict[str, Any] = dict(
             id=uuid4(),

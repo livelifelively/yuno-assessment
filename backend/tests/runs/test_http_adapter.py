@@ -25,13 +25,14 @@ from app.runs.http.dtos import RunAlreadyTerminalResponse, RunCreate
 
 
 def _make_create_dto(**overrides) -> RunCreate:
+    """Build a RunCreate DTO with minimal valid defaults; overrides patch fields a test cares about."""
     defaults = dict(agent_id=uuid4(), input="Hello agent")
     defaults.update(overrides)
     return RunCreate(**defaults)
 
 
 def _make_run(**overrides) -> Run:
-    """Domain Run with sensible defaults; pendinng status unless overridden."""
+    """Build a domain Run with sensible defaults; pending status unless overridden."""
     now = datetime.now(UTC)
     defaults = dict(
         id=uuid4(),
@@ -56,6 +57,7 @@ def _make_run(**overrides) -> Run:
 
 
 def _make_event(**overrides) -> RunEvent:
+    """Build a domain RunEvent with sensible defaults; overrides patch fields a test cares about."""
     now = datetime.now(UTC)
     defaults = dict(
         id=uuid4(),

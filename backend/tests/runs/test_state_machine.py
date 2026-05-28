@@ -19,6 +19,7 @@ from app.runs.errors import InvalidRunTransition
 
 
 def _make_run(agent_id, status=RunStatus.pending) -> Run:
+    """Build a domain Run pinned to `agent_id` with the given status (default pending)."""
     return Run(
         id=uuid4(),
         agent_id=agent_id,
@@ -29,6 +30,7 @@ def _make_run(agent_id, status=RunStatus.pending) -> Run:
 
 
 async def _publish(bus_, event_type: str, payload: dict) -> None:
+    """Publish an Event onto the bus and await its dispatch (subscribers finish first)."""
     await bus_.publish(Event(type=event_type, payload=payload))
 
 
@@ -36,6 +38,7 @@ async def _publish(bus_, event_type: str, payload: dict) -> None:
 
 
 def test_create_run_inserts_pending_with_zero_counters(db_session, seed_agent):
+    """create_run inserts a row in status=pending with all counters at zero."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
     assert run.status == RunStatus.pending
@@ -48,6 +51,7 @@ def test_create_run_inserts_pending_with_zero_counters(db_session, seed_agent):
 async def test_pending_to_active_on_run_started(
     db_session, seed_agent, runs_subscriber
 ):
+    """pending → active on run.started: status flips and started_at is set from payload.occurred_at."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
     started_at = datetime.now(UTC)
@@ -67,6 +71,7 @@ async def test_pending_to_active_on_run_started(
 async def test_pending_to_failed_on_run_failed(
     db_session, seed_agent, runs_subscriber
 ):
+    """pending → failed (early-failure path): error_code, error_message, and completed_at land from the payload."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
     completed_at = datetime.now(UTC)
@@ -92,6 +97,7 @@ async def test_pending_to_failed_on_run_failed(
 async def test_pending_to_cancelled_on_run_cancelled(
     db_session, seed_agent, runs_subscriber
 ):
+    """pending → cancelled (operator cancels before wrapper starts): cancel_reason populated, completed_at set."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
     requested_at = datetime.now(UTC)
@@ -117,6 +123,7 @@ async def test_pending_to_cancelled_on_run_cancelled(
 async def test_active_to_completed_on_run_completed(
     db_session, seed_agent, runs_subscriber
 ):
+    """active → completed on run.completed: output is set from payload, completed_at from payload.occurred_at."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
     service.transition_run_state(
@@ -143,6 +150,7 @@ async def test_active_to_completed_on_run_completed(
 async def test_active_to_failed_on_run_failed(
     db_session, seed_agent, runs_subscriber
 ):
+    """active → failed on run.failed: error_code and error_message land from the payload."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
     service.transition_run_state(
@@ -168,6 +176,7 @@ async def test_active_to_failed_on_run_failed(
 async def test_active_to_aborted_on_run_aborted(
     db_session, seed_agent, runs_subscriber
 ):
+    """active → aborted on run.aborted: abort_reason (limit/value/cap) populated as a nested object, completed_at set."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
     service.transition_run_state(
@@ -199,6 +208,7 @@ async def test_active_to_aborted_on_run_aborted(
 async def test_active_to_cancelled_on_run_cancelled(
     db_session, seed_agent, runs_subscriber
 ):
+    """active → cancelled mid-run on run.cancelled: cancel_reason populated, completed_at set."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
     service.transition_run_state(
@@ -270,6 +280,7 @@ async def test_event_after_terminal_completed_is_dropped(
 async def test_event_after_terminal_failed_is_dropped(
     db_session, seed_agent, runs_subscriber
 ):
+    """A run.completed event arriving at a `failed` row is illegal — row stays `failed`."""
     agent_id = seed_agent()
     run = await _create_terminal_run(db_session, agent_id, RunStatus.failed)
 
@@ -289,6 +300,7 @@ async def test_event_after_terminal_failed_is_dropped(
 async def test_event_after_terminal_aborted_is_dropped(
     db_session, seed_agent, runs_subscriber
 ):
+    """A run.completed event arriving at an `aborted` row is illegal — row stays `aborted`."""
     agent_id = seed_agent()
     run = await _create_terminal_run(db_session, agent_id, RunStatus.aborted)
 
@@ -308,6 +320,7 @@ async def test_event_after_terminal_aborted_is_dropped(
 async def test_event_after_terminal_cancelled_is_dropped(
     db_session, seed_agent, runs_subscriber
 ):
+    """A run.completed event arriving at a `cancelled` row is illegal — row stays `cancelled`."""
     agent_id = seed_agent()
     run = await _create_terminal_run(db_session, agent_id, RunStatus.cancelled)
 

@@ -19,6 +19,7 @@ from app.runs.persistence.row import RunEventRow, RunRow
 
 
 def _make_run(**overrides) -> Run:
+    """Build a domain Run with sensible defaults; overrides patch fields a test cares about."""
     now = datetime.now(UTC)
     defaults = dict(
         id=uuid4(),
@@ -43,6 +44,7 @@ def _make_run(**overrides) -> Run:
 
 
 def _make_event(**overrides) -> RunEvent:
+    """Build a domain RunEvent with sensible defaults; overrides patch fields a test cares about."""
     now = datetime.now(UTC)
     defaults = dict(
         id=uuid4(),
@@ -57,6 +59,7 @@ def _make_event(**overrides) -> RunEvent:
 
 
 def _make_row(**overrides) -> RunRow:
+    """Build a RunRow with sensible defaults; overrides patch columns a test cares about."""
     now = datetime.now(UTC)
     defaults = dict(
         id=uuid4(),
@@ -109,6 +112,8 @@ def test_domain_to_row_flattens_abort_reason_into_jsonb_dict():
 
 
 def test_domain_to_row_flattens_cancel_reason_into_jsonb_dict():
+    """CancelReason model_dump()s into a dict bound for the JSONB column;
+    enum initiated_by is serialized as its string value."""
     cr = CancelReason(
         initiated_by=CancelInitiator.operator,
         requested_at=datetime.now(UTC),
@@ -123,6 +128,7 @@ def test_domain_to_row_flattens_cancel_reason_into_jsonb_dict():
 
 
 def test_row_to_domain_parses_status_string_into_enum():
+    """Flat status string in the row column is coerced back into the RunStatus enum on read."""
     row = _make_row(status="completed", output="answer")
     run = adapter.row_to_domain(row)
 
@@ -131,6 +137,7 @@ def test_row_to_domain_parses_status_string_into_enum():
 
 
 def test_row_to_domain_rehydrates_abort_reason_from_jsonb():
+    """JSONB abort_reason dict re-hydrates into an AbortReason value object on read."""
     row = _make_row(
         status="aborted",
         abort_reason={
@@ -148,6 +155,7 @@ def test_row_to_domain_rehydrates_abort_reason_from_jsonb():
 
 
 def test_row_to_domain_rehydrates_cancel_reason_from_jsonb():
+    """JSONB cancel_reason dict re-hydrates into a CancelReason value object on read."""
     now = datetime.now(UTC)
     row = _make_row(
         status="cancelled",

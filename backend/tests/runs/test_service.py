@@ -11,13 +11,12 @@ from uuid import uuid4
 
 import pytest
 
-from app.event_bus import Event, bus
+import app.runtime.wrapper.service as wrapper_service
+from app.event_bus import Event
 from app.runs import service
 from app.runs.domain import (
-    AbortReason,
     ActiveStatus,
     CancelInitiator,
-    LimitName,
     Run,
     RunStatus,
 )
@@ -27,11 +26,13 @@ from app.runs.errors import (
     RunAlreadyTerminal,
     RunNotFound,
 )
-from app.runs.event_bus.payloads import RunCancelledPayload
+from app.runs.pricing import PRICE_TABLE
 from app.runtime.payloads import TokenUsage
+from app.settings import settings
 
 
 def _make_run(agent_id, **overrides) -> Run:
+    """Build a domain Run pinned to `agent_id`; sensible defaults for everything else."""
     now = datetime.now(UTC)
     defaults = dict(
         id=uuid4(),
@@ -48,6 +49,7 @@ def _make_run(agent_id, **overrides) -> Run:
 
 
 def test_create_run_persists_pending_row(db_session, seed_agent):
+    """create_run inserts the run with status=pending and all counters at 0."""
     agent_id = seed_agent()
     run = _make_run(agent_id=agent_id)
 
@@ -64,13 +66,11 @@ def test_create_run_persists_pending_row(db_session, seed_agent):
 def test_create_run_unknown_agent_raises_agent_not_found_for_run(
     db_session, seed_agent, monkeypatch
 ):
-    """When agent_id does not exist, raise — and do NOT spawn the wrapper."""
+    """When agent_id does not exist, raise AgentNotFoundForRun — and do NOT spawn the wrapper."""
     spawned: list = []
 
     async def fake_run_agent(run_id):
         spawned.append(run_id)
-
-    import app.runtime.wrapper.service as wrapper_service
 
     monkeypatch.setattr(wrapper_service, "run_agent", fake_run_agent)
 
@@ -84,13 +84,11 @@ def test_create_run_unknown_agent_raises_agent_not_found_for_run(
 def test_create_run_spawns_wrapper_background_task(
     db_session, seed_agent, monkeypatch
 ):
-    """create_run schedules WrapperService.run_agent(run.id) without waiting."""
+    """create_run schedules WrapperService.run_agent(run.id) without waiting on it."""
     called: list = []
 
     async def fake_run_agent(run_id):
         called.append(run_id)
-
-    import app.runtime.wrapper.service as wrapper_service
 
     monkeypatch.setattr(wrapper_service, "run_agent", fake_run_agent)
 
@@ -107,6 +105,8 @@ def test_create_run_spawns_wrapper_background_task(
 def test_cancel_run_on_pending_publishes_event_and_returns_row(
     db_session, seed_agent, bus_events
 ):
+    """cancel_run on a pending row publishes run.cancelled and returns the row
+    at its current (not-yet-transitioned) state — subscriber transitions async."""
     agent_id = seed_agent()
     run = _make_run(agent_id=agent_id)
     persisted = service.create_run(db_session, run)
@@ -126,6 +126,7 @@ def test_cancel_run_on_pending_publishes_event_and_returns_row(
 def test_cancel_run_carries_note_through_to_payload(
     db_session, seed_agent, bus_events
 ):
+    """The optional note argument lands verbatim on the published payload."""
     agent_id = seed_agent()
     persisted = service.create_run(db_session, _make_run(agent_id=agent_id))
 
@@ -136,6 +137,7 @@ def test_cancel_run_carries_note_through_to_payload(
 
 
 def test_cancel_run_unknown_id_raises_run_not_found(db_session):
+    """cancel_run on an unknown id raises RunNotFound."""
     with pytest.raises(RunNotFound):
         service.cancel_run(db_session, uuid4())
 
@@ -147,6 +149,7 @@ def test_cancel_run_unknown_id_raises_run_not_found(db_session):
 def test_cancel_run_terminal_raises_run_already_terminal(
     db_session, seed_agent, terminal
 ):
+    """cancel_run on a terminal row raises RunAlreadyTerminal carrying that status."""
     agent_id = seed_agent()
     persisted = service.create_run(db_session, _make_run(agent_id=agent_id))
     # Force-transition without going through the subscriber:
@@ -163,6 +166,7 @@ def test_cancel_run_terminal_raises_run_already_terminal(
 
 
 def test_get_run_returns_run_for_existing_id(db_session, seed_agent):
+    """get_run returns the persisted domain Run for an existing id."""
     agent_id = seed_agent()
     persisted = service.create_run(db_session, _make_run(agent_id=agent_id))
 
@@ -172,10 +176,12 @@ def test_get_run_returns_run_for_existing_id(db_session, seed_agent):
 
 
 def test_get_run_returns_none_for_missing_id(db_session):
+    """get_run returns None for an unknown id (does NOT raise)."""
     assert service.get_run(db_session, uuid4()) is None
 
 
 def test_list_runs_filters_by_status(db_session, seed_agent):
+    """list_runs with a status filter returns only rows in that status."""
     agent_id = seed_agent()
     r1 = service.create_run(db_session, _make_run(agent_id=agent_id))
     r2 = service.create_run(db_session, _make_run(agent_id=agent_id))
@@ -191,6 +197,7 @@ def test_list_runs_filters_by_status(db_session, seed_agent):
 
 
 def test_list_runs_filters_by_agent_id(db_session, seed_agent):
+    """list_runs with an agent_id filter returns only rows for that agent."""
     agent_a = seed_agent(name="A")
     agent_b = seed_agent(name="B")
     service.create_run(db_session, _make_run(agent_id=agent_a))
@@ -202,6 +209,7 @@ def test_list_runs_filters_by_agent_id(db_session, seed_agent):
 
 
 def test_list_runs_pagination_and_total(db_session, seed_agent):
+    """list_runs respects limit/offset; total reflects the unfiltered row count."""
     agent_id = seed_agent()
     for _ in range(5):
         service.create_run(db_session, _make_run(agent_id=agent_id))
@@ -214,8 +222,7 @@ def test_list_runs_pagination_and_total(db_session, seed_agent):
 def test_list_runs_limit_none_uses_default_from_settings(
     db_session, seed_agent
 ):
-    from app.settings import settings
-
+    """list_runs(limit=None) falls back to settings.runs_default_list_limit."""
     agent_id = seed_agent()
     for _ in range(3):
         service.create_run(db_session, _make_run(agent_id=agent_id))
@@ -226,8 +233,7 @@ def test_list_runs_limit_none_uses_default_from_settings(
 
 
 def test_list_runs_limit_clamps_at_settings_max(db_session, seed_agent):
-    from app.settings import settings
-
+    """list_runs(limit > runs_max_list_limit) clamps to the cap rather than honoring the larger value."""
     agent_id = seed_agent()
     for _ in range(3):
         service.create_run(db_session, _make_run(agent_id=agent_id))
@@ -239,6 +245,7 @@ def test_list_runs_limit_clamps_at_settings_max(db_session, seed_agent):
 
 
 def test_list_active_runs_for_agent_empty_when_no_runs(db_session, seed_agent):
+    """list_active_runs_for_agent returns [] for an agent with no runs."""
     agent_id = seed_agent()
     assert service.list_active_runs_for_agent(db_session, agent_id) == []
 
@@ -246,6 +253,8 @@ def test_list_active_runs_for_agent_empty_when_no_runs(db_session, seed_agent):
 def test_list_active_runs_for_agent_returns_pending_and_active_only(
     db_session, seed_agent
 ):
+    """list_active_runs_for_agent returns RunRef[] for pending/active rows;
+    terminal rows are excluded; each RunRef carries exactly {id, status, started_at}."""
     agent_id = seed_agent()
     pending = service.create_run(db_session, _make_run(agent_id=agent_id))
     active = service.create_run(db_session, _make_run(agent_id=agent_id))
@@ -274,7 +283,7 @@ def test_list_active_runs_for_agent_returns_pending_and_active_only(
 def test_get_run_events_orders_by_sequence_number(
     db_session, seed_agent, runs_subscriber
 ):
-    """Once events are appended, list returns them ordered ascending."""
+    """Once events are appended, get_run_events returns them ordered by sequence_number ascending."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id=agent_id))
 
@@ -289,6 +298,7 @@ def test_get_run_events_orders_by_sequence_number(
 
 
 def test_get_run_events_raises_for_unknown_run(db_session):
+    """get_run_events raises RunNotFound when the run id is unknown."""
     with pytest.raises(RunNotFound):
         service.get_run_events(db_session, uuid4())
 
@@ -296,6 +306,7 @@ def test_get_run_events_raises_for_unknown_run(db_session):
 def test_get_daily_cost_for_agent_sums_completed_runs_in_window(
     db_session, seed_agent
 ):
+    """get_daily_cost_for_agent sums cost_usd across runs completed inside the window."""
     agent_id = seed_agent()
     r1 = service.create_run(db_session, _make_run(agent_id=agent_id))
     r2 = service.create_run(db_session, _make_run(agent_id=agent_id))
@@ -315,6 +326,7 @@ def test_get_daily_cost_for_agent_sums_completed_runs_in_window(
 
 
 def test_get_daily_cost_for_agent_returns_zero_when_none(db_session, seed_agent):
+    """get_daily_cost_for_agent returns 0.0 for an agent with no completed runs."""
     agent_id = seed_agent()
     assert service.get_daily_cost_for_agent(db_session, agent_id) == 0.0
 
@@ -337,6 +349,7 @@ def test_get_daily_cost_for_agent_default_window_is_24_hours(
 
 
 def test_transition_run_state_legal_updates_row(db_session, seed_agent):
+    """A legal transition updates status and the supplied terminal-data columns."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id=agent_id))
 
@@ -351,6 +364,7 @@ def test_transition_run_state_legal_updates_row(db_session, seed_agent):
 def test_transition_run_state_illegal_raises_invalid_transition(
     db_session, seed_agent
 ):
+    """An illegal transition (out of a terminal state) raises InvalidRunTransition."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id=agent_id))
     service.transition_run_state(
@@ -366,8 +380,9 @@ def test_transition_run_state_illegal_raises_invalid_transition(
 def test_accumulate_run_usage_increments_tokens_and_cost(
     db_session, seed_agent
 ):
-    from app.runs.pricing import PRICE_TABLE
-
+    """accumulate_run_usage adds the usage to token_usage_* and adds priced cost_usd
+    using the (provider, model) entry from PRICE_TABLE — depends on the lookup,
+    not a specific model id."""
     # Pick the first priced (provider, model) so the test depends on the
     # lookup, not a specific id.
     (provider, model), (price_in, price_out) = next(iter(PRICE_TABLE.items()))
@@ -385,6 +400,7 @@ def test_accumulate_run_usage_increments_tokens_and_cost(
 
 
 def test_bump_step_count_increments_by_one(db_session, seed_agent):
+    """bump_step_count increments step_count by exactly 1 per call."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id=agent_id))
 
@@ -398,6 +414,8 @@ def test_bump_step_count_increments_by_one(db_session, seed_agent):
 def test_append_run_event_computes_sequence_and_stores_payload_verbatim(
     db_session, seed_agent
 ):
+    """append_run_event computes the next sequence_number, stores payload verbatim,
+    and preserves event.occurred_at."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id=agent_id))
 

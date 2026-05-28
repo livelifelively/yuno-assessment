@@ -3,6 +3,7 @@ and verbatim payload storage."""
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ from app.runs.pricing import PRICE_TABLE
 
 
 def _make_run(agent_id) -> Run:
+    """Build a domain Run pinned to `agent_id` in status=pending."""
     return Run(
         id=uuid4(),
         agent_id=agent_id,
@@ -28,6 +30,7 @@ def _make_run(agent_id) -> Run:
 
 
 async def _publish(event_type: str, payload: dict) -> None:
+    """Publish an Event onto the global bus and await subscriber dispatch."""
     await bus.publish(Event(type=event_type, payload=payload))
 
 
@@ -37,6 +40,7 @@ async def _publish(event_type: str, payload: dict) -> None:
 async def test_first_event_has_sequence_number_one(
     db_session, seed_agent, runs_subscriber
 ):
+    """The first event appended to a run gets sequence_number=1 (1-indexed, per-run)."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
 
@@ -53,6 +57,7 @@ async def test_first_event_has_sequence_number_one(
 async def test_sequence_numbers_are_monotonic_per_run(
     db_session, seed_agent, runs_subscriber
 ):
+    """Subsequent events on the same run get 2, 3, 4 … in publish order."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
 
@@ -146,6 +151,7 @@ def test_unique_constraint_enforces_per_run_seq(db_session, seed_agent):
 async def test_step_count_increments_on_llm_call_started(
     db_session, seed_agent, runs_subscriber
 ):
+    """Each llm.call.started event increments the run's step_count by exactly 1."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
     assert run.step_count == 0
@@ -169,6 +175,7 @@ async def test_step_count_increments_on_llm_call_started(
 async def test_step_count_does_not_change_on_llm_call_completed_or_failed(
     db_session, seed_agent, runs_subscriber
 ):
+    """Neither llm.call.completed nor llm.call.failed touches step_count — only llm.call.started does."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
 
@@ -204,6 +211,7 @@ async def test_step_count_does_not_change_on_llm_call_completed_or_failed(
 async def test_token_usage_accumulates_from_llm_call_completed(
     db_session, seed_agent, runs_subscriber
 ):
+    """token_usage_prompt and token_usage_completion sum across successive llm.call.completed events."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
 
@@ -297,8 +305,6 @@ async def test_unknown_model_does_not_change_cost_but_appends_event(
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
 
-    import logging
-
     with caplog.at_level(logging.WARNING):
         await _publish(
             "llm.call.completed",
@@ -329,6 +335,7 @@ async def test_unknown_model_does_not_change_cost_but_appends_event(
 async def test_llm_call_failed_appends_event_but_no_row_mutation(
     db_session, seed_agent, runs_subscriber
 ):
+    """llm.call.failed appends a RunEventRow but does NOT mutate step_count / token_usage_* / cost_usd."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
 
@@ -410,6 +417,8 @@ async def test_llm_call_failed_appends_event_but_no_row_mutation(
 async def test_run_events_payload_stored_verbatim(
     db_session, seed_agent, runs_subscriber, event_type, payload_extras
 ):
+    """For every event_type, the published payload dict is stored byte-for-byte
+    in run_events.payload — no filtering, no re-projection."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
 
@@ -441,6 +450,8 @@ async def test_run_events_payload_stored_verbatim(
 async def test_abort_reason_round_trips_through_get_run(
     db_session, seed_agent, runs_subscriber
 ):
+    """run.aborted persists abort_reason as JSONB; GET /runs/{id} re-hydrates
+    it as a nested AbortReason with the LimitName enum coerced."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
     service.transition_run_state(
@@ -470,6 +481,8 @@ async def test_abort_reason_round_trips_through_get_run(
 async def test_cancel_reason_round_trips_through_get_run(
     db_session, seed_agent, runs_subscriber
 ):
+    """run.cancelled persists cancel_reason as JSONB; GET /runs/{id}
+    re-hydrates it as a nested CancelReason."""
     agent_id = seed_agent()
     run = service.create_run(db_session, _make_run(agent_id))
     service.transition_run_state(
