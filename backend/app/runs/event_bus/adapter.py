@@ -1,5 +1,4 @@
 """Event-bus boundary adapter — translates bus payloads ↔ runs domain.
-STUB (TDD RED phase).
 
 Inbound: parse_* functions validate the bus event dict into the emitter's
 typed payload model; abort_reason_from_payload / cancel_reason_from_payload
@@ -29,53 +28,59 @@ from app.runtime.wrapper.payloads import (
     RunStartedPayload,
 )
 
-_TODO = "TODO: GREEN phase — runs event-bus adapter"
-
 
 # --- Inbound: parse bus Event into the emitter's typed payload ---
 
 
 def parse_run_started(event: Event) -> RunStartedPayload:
-    raise NotImplementedError(_TODO)
+    return RunStartedPayload.model_validate(event.payload)
 
 
 def parse_run_completed(event: Event) -> RunCompletedPayload:
-    raise NotImplementedError(_TODO)
+    return RunCompletedPayload.model_validate(event.payload)
 
 
 def parse_run_failed(event: Event) -> RunFailedPayload:
-    raise NotImplementedError(_TODO)
+    return RunFailedPayload.model_validate(event.payload)
 
 
 def parse_run_aborted(event: Event) -> RunAbortedPayload:
-    raise NotImplementedError(_TODO)
+    return RunAbortedPayload.model_validate(event.payload)
 
 
 def parse_run_cancelled(event: Event) -> RunCancelledPayload:
-    raise NotImplementedError(_TODO)
+    return RunCancelledPayload.model_validate(event.payload)
 
 
 def parse_llm_call_started(event: Event) -> LlmCallStartedPayload:
-    raise NotImplementedError(_TODO)
+    return LlmCallStartedPayload.model_validate(event.payload)
 
 
 def parse_llm_call_completed(event: Event) -> LlmCallCompletedPayload:
-    raise NotImplementedError(_TODO)
+    return LlmCallCompletedPayload.model_validate(event.payload)
 
 
 def parse_llm_call_failed(event: Event) -> LlmCallFailedPayload:
-    raise NotImplementedError(_TODO)
+    return LlmCallFailedPayload.model_validate(event.payload)
 
 
 # --- Inbound: project payload into runs domain values ---
 
 
 def abort_reason_from_payload(p: RunAbortedPayload) -> AbortReason:
-    raise NotImplementedError(_TODO)
+    return AbortReason(
+        limit=p.abort_reason.limit,
+        value=p.abort_reason.value,
+        cap=p.abort_reason.cap,
+    )
 
 
 def cancel_reason_from_payload(p: RunCancelledPayload) -> CancelReason:
-    raise NotImplementedError(_TODO)
+    return CancelReason(
+        initiated_by=p.initiated_by,
+        requested_at=p.requested_at,
+        note=p.note,
+    )
 
 
 # --- Outbound: owned payload construction ---
@@ -84,4 +89,9 @@ def cancel_reason_from_payload(p: RunCancelledPayload) -> CancelReason:
 def build_run_cancelled_payload(
     run_id: UUID, reason: CancelReason
 ) -> RunCancelledPayload:
-    raise NotImplementedError(_TODO)
+    return RunCancelledPayload(
+        run_id=run_id,
+        initiated_by=reason.initiated_by,
+        requested_at=reason.requested_at,
+        note=reason.note,
+    )
