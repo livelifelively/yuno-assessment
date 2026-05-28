@@ -1,4 +1,7 @@
-"""HTTP boundary adapter — translates DTOs ↔ domain. STUB (TDD RED phase)."""
+"""HTTP boundary adapter — translates DTOs ↔ domain.
+
+Per ADR-009, pure functions over data. No DB calls, no I/O.
+"""
 
 from __future__ import annotations
 
@@ -15,34 +18,49 @@ from app.runs.http.dtos import (
     RunRead,
 )
 
-_TODO = "TODO: GREEN phase — runs HTTP adapter"
 
-
-def create_to_domain(
-    data: RunCreate, *, id: UUID, now: datetime
-) -> Run:
-    """Build domain Run from RunCreate with persistence-owned fields populated
-    (id, created_at=now, status=pending, all counters at 0)."""
-    raise NotImplementedError(_TODO)
+def create_to_domain(data: RunCreate, *, id: UUID, now: datetime) -> Run:
+    """Build a domain Run from a RunCreate request, assigning the
+    persistence-owned fields (id, created_at, status=pending, zero counters,
+    null terminal fields)."""
+    return Run(
+        id=id,
+        agent_id=data.agent_id,
+        status=RunStatus.pending,
+        input=data.input,
+        output=None,
+        error_code=None,
+        error_message=None,
+        abort_reason=None,
+        cancel_reason=None,
+        token_usage_prompt=0,
+        token_usage_completion=0,
+        cost_usd=0.0,
+        step_count=0,
+        created_at=now,
+        started_at=None,
+        completed_at=None,
+    )
 
 
 def domain_to_read(run: Run) -> RunRead:
-    raise NotImplementedError(_TODO)
+    """1:1 mirror projection — every domain Run field surfaces on RunRead;
+    nested AbortReason / CancelReason serialize as nested objects."""
+    return RunRead.model_validate(run.model_dump())
 
 
 def event_to_read(event: RunEvent) -> RunEventRead:
-    raise NotImplementedError(_TODO)
+    """1:1 mirror of RunEvent including verbatim payload dict."""
+    return RunEventRead.model_validate(event.model_dump())
 
 
 def runs_to_list(items: list[Run], total: int) -> RunList:
-    raise NotImplementedError(_TODO)
+    return RunList(items=[domain_to_read(r) for r in items], total=total)
 
 
 def events_to_list(items: list[RunEvent]) -> RunEventList:
-    raise NotImplementedError(_TODO)
+    return RunEventList(items=[event_to_read(e) for e in items])
 
 
 def terminal_to_response(status: RunStatus) -> RunAlreadyTerminalResponse:
-    """Build the 409 body for cancel-on-terminal-run from the run's
-    current status."""
-    raise NotImplementedError(_TODO)
+    return RunAlreadyTerminalResponse(status=status)
