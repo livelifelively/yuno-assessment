@@ -130,10 +130,15 @@ class TestModelProjection:
         assert crewai_agent.llm.model == "gemini/gemini-3.1-flash-lite-preview"
 
     def test_temperature_passes_through_to_crewai_llm(self) -> None:
+        # Provider choice is incidental — temperature pass-through is the same
+        # contract for any LiteLLM-backed provider. Use Gemini here because it's
+        # the V1 default per ADR-007 and is the one CrewAI extra installed in
+        # the test env (crewai[google-genai]). Anthropic / OpenAI would also
+        # work in environments that install their respective CrewAI extras.
         agent = make_agent(
             model=ModelConfig(
-                provider=Provider.anthropic,
-                name="claude-sonnet-4-5",
+                provider=Provider.gemini,
+                name="gemini-2.0-flash",
                 temperature=0.3,
             )
         )
@@ -169,7 +174,10 @@ class TestBatchOneDefaults:
 
     def test_memory_default_false(self) -> None:
         crewai_agent = compile_agent(make_agent())
-        assert crewai_agent.memory is False
+        # CrewAI normalizes memory=False -> memory=None internally (both mean
+        # "no memory backend wired"). The yuno contract is "memory not enabled
+        # in Batch 1" — accept either falsy representation.
+        assert not crewai_agent.memory
 
     def test_verbose_default_false(self) -> None:
         crewai_agent = compile_agent(make_agent())
